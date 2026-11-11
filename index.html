@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1214">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>Compteur vélo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#f4f5f2;--card:#fff;--fg:#14181a;--mut:#6b7378;--acc:#1f8a4c;--warn:#d9480f;--line:#dfe3df;--trk:#2563eb;--rec:#1f8a4c}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1214;--card:#1a1f22;--fg:#f1f4f2;--mut:#8b959a;--acc:#3ddc84;--warn:#ff8a5b;--line:#2a3236;--trk:#6ea8ff;--rec:#3ddc84;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:520px;margin:0 auto;padding:calc(8px + env(safe-area-inset-top,0px)) 12px calc(16px + env(safe-area-inset-bottom,0px))}
+header{display:flex;justify-content:space-between;align-items:center;padding:2px 2px 8px}
+h1{font-size:15px;margin:0}
+#gps{font-size:12px;color:var(--mut)}
+#gps b{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--mut);margin-right:6px}
+#gps.ok b{background:var(--acc)}#gps.bad b{background:var(--warn)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;position:relative}
+#map{height:36vh;min-height:220px;background:var(--card)}
+#ctr{position:absolute;right:8px;top:8px;z-index:500;width:auto;flex:none;padding:8px 10px;font-size:13px}
+#prof{display:block;width:100%;height:96px}
+.nav,.grid{display:grid;gap:8px;margin-top:8px}
+.nav{grid-template-columns:repeat(4,1fr)}.grid{grid-template-columns:1fr 1fr}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.c small{display:block;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.c strong{font-size:30px;font-variant-numeric:tabular-nums;font-weight:650}
+.c em{font-style:normal;font-size:12px;color:var(--mut);margin-left:3px}
+.big{grid-column:1/-1;text-align:center}.big strong{font-size:68px;line-height:1.05}
+.nav .c{padding:6px 8px}.nav .c strong{font-size:19px}
+.warn strong{color:var(--warn)}
+.btns{display:flex;gap:8px;margin-top:10px}
+button,label.btn{flex:1;border-radius:12px;padding:14px 6px;font:inherit;font-weight:650;background:var(--card);color:var(--fg);border:1px solid var(--line);text-align:center;cursor:pointer}
+button.go{background:var(--acc);color:#06210f;border-color:var(--acc)}
+input[type=file]{display:none}
+#msg{margin-top:8px;font-size:13px;color:var(--mut);min-height:18px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<header><h1>🚴 Compteur vélo</h1><div id="gps"><b></b><span>GPS en attente</span></div></header>
+
+<div class="card"><div id="map"></div><button id="ctr">Centrer</button></div>
+<div class="card" id="pcard" style="margin-top:8px" hidden><canvas id="prof"></canvas></div>
+
+<div class="nav" id="nav" hidden>
+<div class="c"><small>Reste</small><strong id="rem">–</strong><em>km</em></div>
+<div class="c"><small>Fait</small><strong id="prog">–</strong><em>%</em></div>
+<div class="c"><small>D+ reste</small><strong id="dpr">–</strong><em>m</em></div>
+<div class="c" id="offc"><small>Écart</small><strong id="off">–</strong><em>m</em></div>
+</div>
+
+<div class="grid">
+<div class="c big"><small>Vitesse</small><strong id="spd">0.0</strong><em>km/h</em></div>
+<div class="c"><small>Distance</small><strong id="dist">0.00</strong><em>km</em></div>
+<div class="c"><small>Temps</small><strong id="time">0:00:00</strong></div>
+<div class="c"><small>Moyenne</small><strong id="avg">0.0</strong><em>km/h</em></div>
+<div class="c"><small>Max</small><strong id="max">0.0</strong><em>km/h</em></div>
+<div class="c"><small>Dénivelé +</small><strong id="asc">0</strong><em>m</em></div>
+<div class="c"><small>Altitude</small><strong id="alt">–</strong><em>m</em></div>
+</div>
+
+<div class="btns"><button class="go" id="go">Démarrer</button><button id="rst">Remise à zéro</button></div>
+<div class="btns"><label class="btn">Importer GPX<input type="file" id="file" accept=".gpx,application/gpx+xml,text/xml,application/xml"></label><button id="exp">Exporter GPX</button></div>
+<div id="msg"></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},R=6371000,rad=Math.PI/180;
+function hav(a,b,c,d){var x=(c-a)*rad,y=(d-b)*rad,s=Math.sin(x/2)*Math.sin(x/2)+Math.cos(a*rad)*Math.cos(c*rad)*Math.sin(y/2)*Math.sin(y/2);return 2*R*Math.asin(Math.sqrt(s))}
+function fmtT(s){s=Math.floor(s);var h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;return h+":"+(m<10?"0":"")+m+":"+(r<10?"0":"")+r}
+function msg(t){$("msg").textContent=t}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function store(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
+function load(k){try{return localStorage.getItem(k)}catch(e){return null}}
+
+var route=null,st=fresh(),watchId=null,follow=true,first=true;
+function fresh(){return{run:false,dist:0,moving:0,max:0,asc:0,lastAlt:null,last:null,lastT:null,trace:[],pos:null,speed:0,alt:null,nr:null}}
+
+// ---------- Carte ----------
+var map=L.map("map",{zoomControl:false}).setView([46.6,2.5],6);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+var routeLine=L.polyline([],{color:"#2563eb",weight:5,opacity:.85}).addTo(map);
+var recLine=L.polyline([],{color:"#1f8a4c",weight:4}).addTo(map);
+var me=L.circleMarker([0,0],{radius:8,color:"#fff",weight:3,fillColor:"#1f8a4c",fillOpacity:1});
+map.on("dragstart",function(){follow=false});
+$("ctr").addEventListener("click",function(){follow=true;if(st.pos)map.setView([st.pos.lat,st.pos.lon],Math.max(map.getZoom(),15))});
+
+// ---------- GPX import ----------
+function parseGpx(txt){
+ var d=new DOMParser().parseFromString(txt,"application/xml");
+ if(d.querySelector("parsererror"))throw new Error("Fichier GPX illisible");
+ var n=d.getElementsByTagName("trkpt");
+ if(!n.length)n=d.getElementsByTagName("rtept");
+ if(!n.length)throw new Error("Aucun point de tracé dans ce GPX");
+ var pts=[],cum=[],ele=[],t=0,ok=0;
+ for(var i=0;i<n.length;i++){
+  var la=parseFloat(n[i].getAttribute("lat")),lo=parseFloat(n[i].getAttribute("lon"));
+  if(isNaN(la)||isNaN(lo))continue;
+  if(pts.length){var p=pts[pts.length-1];t+=hav(p.lat,p.lon,la,lo)}
+  var e=n[i].getElementsByTagName("ele")[0],v=e?parseFloat(e.textContent):NaN;
+  if(!isNaN(v))ok++;
+  pts.push({lat:la,lon:lo});cum.push(t);ele.push(v);
+ }
+ if(pts.length<2)throw new Error("Tracé trop court");
+ var r={pts:pts,cum:cum,total:t,ele:null};
+ if(ok>pts.length*.5){
+  for(i=0;i<ele.length;i++)if(isNaN(ele[i]))ele[i]=i?ele[i-1]:ele[ele.findIndex(function(x){return!isNaN(x)})];
+  var sm=ele.map(function(_,i){var a=0,c=0;for(var j=Math.max(0,i-4);j<=Math.min(ele.length-1,i+4);j++){a+=ele[j];c++}return a/c});
+  var asc=[0];for(i=1;i<sm.length;i++)asc.push(asc[i-1]+Math.max(0,sm[i]-sm[i-1]));
+  r.sm=sm;r.asc=asc;r.min=Math.min.apply(0,sm);r.max=Math.max.apply(0,sm);
+ }
+ return r;
+}
+function setRoute(txt){
+ route=parseGpx(txt);store("cv_route",txt);
+ routeLine.setLatLngs(route.pts.map(function(p){return[p.lat,p.lon]}));
+ map.fitBounds(routeLine.getBounds(),{padding:[20,20]});follow=false;
+ $("nav").hidden=false;
+ msg("Parcours : "+(route.total/1000).toFixed(1)+" km"+(route.asc?", D+ "+Math.round(route.asc[route.asc.length-1])+" m":", sans altitude dans le GPX"));
+ st.nr=null;nearest();update();drawProf();
+}
+$("file").addEventListener("change",function(e){
+ var f=e.target.files[0];if(!f)return;
+ var r=new FileReader();
+ r.onload=function(){try{setRoute(r.result)}catch(err){msg(err.message)}};
+ r.readAsText(f);e.target.value="";
+});
+
+// ---------- GPS ----------
+function gpsStatus(c,t){var g=$("gps");g.className=c;g.lastChild.textContent=t}
+function onPos(p){
+ var c=p.coords,t=p.timestamp;
+ gpsStatus(c.accuracy>40?"bad":"ok","GPS ±"+Math.round(c.accuracy)+" m");
+ if(c.accuracy>40)return;
+ var s=c.speed!=null&&!isNaN(c.speed)?c.speed:null;
+ if(st.last){
+  var dt=(t-st.lastT)/1000,d=hav(st.last.lat,st.last.lon,c.latitude,c.longitude);
+  if(s==null&&dt>0)s=d/dt;
+  if(d<3){st.lastT=t;st.speed=0;setPos(c);return}
+  if(st.run&&s>0.8){st.dist+=d;st.moving+=dt;addPt(c,t)}
+ }else if(st.run)addPt(c,t);
+ s=s||0;st.speed=s*3.6;
+ if(st.run&&st.speed>st.max&&st.speed<90)st.max=st.speed;
+ if(c.altitude!=null){
+  st.alt=c.altitude;
+  if(st.lastAlt==null)st.lastAlt=c.altitude;
+  else if(Math.abs(c.altitude-st.lastAlt)>=3){if(st.run&&c.altitude>st.lastAlt)st.asc+=c.altitude-st.lastAlt;st.lastAlt=c.altitude}
+ }
+ st.last={lat:c.latitude,lon:c.longitude};st.lastT=t;
+ setPos(c);
+}
+function addPt(c,t){
+ st.trace.push([c.latitude,c.longitude,c.altitude,t]);
+ recLine.addLatLng([c.latitude,c.longitude]);
+ if(st.trace.length%10===0)save();
+}
+function setPos(c){
+ st.pos={lat:c.latitude,lon:c.longitude};
+ if(!me._map)me.addTo(map);
+ me.setLatLng([c.latitude,c.longitude]);
+ if(follow){first?map.setView([c.latitude,c.longitude],15):map.panTo([c.latitude,c.longitude]);}
+ first=false;
+ nearest();update();drawProf();
+}
+function onErr(e){gpsStatus("bad",e.code===1?"GPS refusé":"GPS indisponible");msg(e.code===1?"Autorisez la localisation dans les réglages du navigateur.":"Signal GPS introuvable.")}
+function startWatch(){
+ if(!navigator.geolocation){msg("Géolocalisation non supportée.");return}
+ if(watchId==null)watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+}
+async function lock(){try{if(navigator.wakeLock)await navigator.wakeLock.request("screen")}catch(e){}}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible"&&st.run)lock()});
+
+// ---------- Contrôles ----------
+function save(){store("cv_st",JSON.stringify({dist:st.dist,moving:st.moving,max:st.max,asc:st.asc,trace:st.trace}))}
+$("go").addEventListener("click",function(){
+ if(!st.run){st.run=true;startWatch();lock();$("go").textContent="Pause";msg("")}
+ else{st.run=false;st.speed=0;$("go").textContent="Reprendre";save();update()}
+});
+$("rst").addEventListener("click",function(){
+ if(st.trace.length>1&&!confirm("Effacer la sortie en cours ? Pensez à l’exporter avant."))return;
+ var keep=st.pos;st=fresh();st.pos=keep;recLine.setLatLngs([]);store("cv_st",null);
+ $("go").textContent="Démarrer";nearest();update();drawProf();
+});
+$("exp").addEventListener("click",function(){
+ if(st.trace.length<2){msg("Rien à exporter pour l’instant.");return}
+ var d=new Date(st.trace[0][3]),name="sortie-"+d.toISOString().slice(0,16).replace(/[-:T]/g,"")+".gpx";
+ var x='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Compteur vélo" xmlns="http://www.topografix.com/GPX/1/1">\n<trk><name>'+name+'</name><trkseg>\n';
+ st.trace.forEach(function(p){x+='<trkpt lat="'+p[0].toFixed(6)+'" lon="'+p[1].toFixed(6)+'">'+(p[2]!=null?'<ele>'+p[2].toFixed(1)+'</ele>':'')+'<time>'+new Date(p[3]).toISOString()+'</time></trkpt>\n'});
+ x+='</trkseg></trk>\n</gpx>';
+ var file=new File([x],name,{type:"application/gpx+xml"});
+ if(navigator.canShare&&navigator.canShare({files:[file]}))navigator.share({files:[file]}).catch(function(){});
+ else{var a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove()}
+});
+setInterval(function(){if(st.run)update()},1000);
+
+// ---------- Affichage ----------
+function nearest(){
+ var p=st.pos;if(!route||!p){st.nr=null;return}
+ var best=1e12,bi=0,k=Math.cos(p.lat*rad);
+ for(var i=0;i<route.pts.length;i++){var q=route.pts[i],dx=(q.lon-p.lon)*k,dy=q.lat-p.lat,d=dx*dx+dy*dy;if(d<best){best=d;bi=i}}
+ st.nr={i:bi,off:hav(p.lat,p.lon,route.pts[bi].lat,route.pts[bi].lon)};
+}
+function update(){
+ $("spd").textContent=(st.run?st.speed:0).toFixed(1);
+ $("dist").textContent=(st.dist/1000).toFixed(2);
+ $("time").textContent=fmtT(st.moving);
+ $("avg").textContent=(st.moving>5?st.dist/st.moving*3.6:0).toFixed(1);
+ $("max").textContent=st.max.toFixed(1);
+ $("asc").textContent=Math.round(st.asc);
+ $("alt").textContent=st.alt!=null?Math.round(st.alt):"–";
+ var n=st.nr;
+ if(route&&n){
+  $("rem").textContent=((route.total-route.cum[n.i])/1000).toFixed(1);
+  $("prog").textContent=Math.round(route.cum[n.i]/route.total*100);
+  $("dpr").textContent=route.asc?Math.round(route.asc[route.asc.length-1]-route.asc[n.i]):"–";
+  $("off").textContent=Math.round(n.off);
+  $("offc").className="c"+(n.off>50?" warn":"");
+ }
+}
+var pc=$("prof"),px=pc.getContext("2d");
+function drawProf(){
+ var card=$("pcard");
+ if(!route||!route.sm){card.hidden=true;return}
+ card.hidden=false;
+ var dpr=window.devicePixelRatio||1,w=pc.clientWidth,h=pc.clientHeight;
+ if(pc.width!==Math.round(w*dpr)||pc.height!==Math.round(h*dpr)){pc.width=w*dpr;pc.height=h*dpr}
+ px.setTransform(dpr,0,0,dpr,0,0);px.clearRect(0,0,w,h);
+ var top=18,bot=8,rg=Math.max(route.max-route.min,20),n=route.sm.length;
+ function X(i){return route.cum[i]/route.total*w}
+ function Y(v){return h-bot-(v-route.min)/rg*(h-top-bot)}
+ px.beginPath();px.moveTo(0,h);
+ for(var i=0;i<n;i+=Math.max(1,Math.floor(n/400)))px.lineTo(X(i),Y(route.sm[i]));
+ px.lineTo(w,Y(route.sm[n-1]));px.lineTo(w,h);px.closePath();
+ px.fillStyle=css("--trk");px.globalAlpha=.25;px.fill();px.globalAlpha=1;
+ px.strokeStyle=css("--trk");px.lineWidth=2;px.stroke();
+ px.fillStyle=css("--mut");px.font="11px system-ui";
+ px.fillText(Math.round(route.max)+" m",6,12);px.fillText(Math.round(route.min)+" m",w-44,12);
+ if(st.nr){var x=X(st.nr.i);
+  px.beginPath();px.moveTo(x,top-4);px.lineTo(x,h);px.strokeStyle=css("--rec");px.lineWidth=2;px.stroke();
+  px.beginPath();px.arc(x,Y(route.sm[st.nr.i]),5,0,7);px.fillStyle=css("--rec");px.fill()}
+}
+window.addEventListener("resize",function(){map.invalidateSize();drawProf()});
+
+// ---------- Restauration ----------
+try{var r=load("cv_route");if(r)setRoute(r);follow=true;
+ var s=JSON.parse(load("cv_st")||"null");
+ if(s&&s.trace&&s.trace.length){st.dist=s.dist;st.moving=s.moving;st.max=s.max;st.asc=s.asc;st.trace=s.trace;
+  recLine.setLatLngs(s.trace.map(function(p){return[p[0],p[1]]}));$("go").textContent="Reprendre";msg("Sortie précédente restaurée.")}
+}catch(e){}
+update();
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
+})();
+</script>
+</body>
+</html>
