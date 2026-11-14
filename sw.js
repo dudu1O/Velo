@@ -1,4 +1,4 @@
-const C = 'velo-v3';
+const C = 'velo-v4';
 const SHELL = ['./', './index.html', './manifest.json', './icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'];

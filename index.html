@@ -142,6 +142,21 @@ function turns(r){
   lc=t.c});
  return out;
 }
+function climbs(r){
+ var e=r.sm,C=r.cum,n=e.length,T=5,piv=[],dir=0,lo=0,hi=0,out=[],i;
+ for(i=1;i<n;i++){
+  if(e[i]>e[hi])hi=i;if(e[i]<e[lo])lo=i;
+  if(dir<=0&&e[i]-e[lo]>=T){piv.push({i:lo,v:1});dir=1;hi=i}
+  else if(dir>=0&&e[hi]-e[i]>=T){piv.push({i:hi,v:0});dir=-1;lo=i}
+ }
+ if(dir>0)piv.push({i:hi,v:0});
+ for(i=0;i+1<piv.length;i++){
+  if(!piv[i].v||piv[i+1].v)continue;
+  var a=piv[i].i,b=piv[i+1].i,g=e[b]-e[a],l=C[b]-C[a];
+  if(g>=10&&l>0&&g/l>=.02)out.push({s:C[a],e:C[b],g:g,ia:a,ib:b});
+ }
+ return out;
+}
 function parseGpx(txt){
  var d=new DOMParser().parseFromString(txt,"application/xml");
  if(d.querySelector("parsererror"))throw new Error("Fichier GPX illisible");
@@ -158,12 +173,12 @@ function parseGpx(txt){
   pts.push({lat:la,lon:lo});cum.push(t);ele.push(v);
  }
  if(pts.length<2)throw new Error("Tracé trop court");
- var r={pts:pts,cum:cum,total:t,ele:null};
+ var r={pts:pts,cum:cum,total:t,ele:null,climbs:[]};
  if(ok>pts.length*.5){
   for(i=0;i<ele.length;i++)if(isNaN(ele[i]))ele[i]=i?ele[i-1]:ele[ele.findIndex(function(x){return!isNaN(x)})];
   var sm=ele.map(function(_,i){var a=0,c=0;for(var j=Math.max(0,i-4);j<=Math.min(ele.length-1,i+4);j++){a+=ele[j];c++}return a/c});
   var asc=[0];for(i=1;i<sm.length;i++)asc.push(asc[i-1]+Math.max(0,sm[i]-sm[i-1]));
-  r.sm=sm;r.asc=asc;r.min=Math.min.apply(0,sm);r.max=Math.max.apply(0,sm);
+  r.sm=sm;r.asc=asc;r.min=Math.min.apply(0,sm);r.max=Math.max.apply(0,sm);r.climbs=climbs(r);
  }
  r.turns=turns(r);
  return r;
@@ -174,7 +189,7 @@ function setRoute(txt){
  var pd=Math.round(map.getSize().x/6)+8;map.fitBounds(routeLine.getBounds(),{padding:[pd,pd]});follow=false;
  $("nav").hidden=false;tAlerted={};turnLayer.clearLayers();
  route.turns.forEach(function(t){var q=route.pts[t.i];L.circleMarker([q.lat,q.lon],{radius:4,color:"#d9480f",weight:2,fillOpacity:.9}).addTo(turnLayer)});
- msg("Parcours : "+(route.total/1000).toFixed(1)+" km, "+route.turns.length+" virages"+(route.asc?", D+ "+Math.round(route.asc[route.asc.length-1])+" m":", sans altitude dans le GPX"));
+ msg("Parcours : "+(route.total/1000).toFixed(1)+" km, "+route.turns.length+" virages, "+route.climbs.length+" côtes"+(route.asc?", D+ "+Math.round(route.asc[route.asc.length-1])+" m":", sans altitude dans le GPX"));
  st.nr=null;nearest();update();drawProf();
 }
 $("file").addEventListener("change",function(e){
@@ -305,7 +320,24 @@ function turnUI(){
  el.className="card turn"+(d<=30?" now":d<=120?" soon":"");
  [250,120,30].forEach(function(th){var key=idx+"-"+th;if(st.run&&d<=th&&d>th*.4&&!tAlerted[key]){tAlerted[key]=1;beep(th===30?2:1)}});
 }
-var pc=$("prof"),px=pc.getContext("2d");
+var pc=$("prof"),px=pc.getContext("2d"),pmodes=["auto","500","2000","total"],pmode=pmodes.indexOf(load("cv_pm"))>=0?load("cv_pm"):"auto";
+$("pcard").addEventListener("click",function(){pmode=pmodes[(pmodes.indexOf(pmode)+1)%4];store("cv_pm",pmode);drawProf()});
+function profWin(cp){
+ var T=route.total,x0=0,x1=T,lbl="Total",cl=null,info="",j;
+ for(j=0;j<route.climbs.length;j++)if(route.climbs[j].e>cp+5){cl=route.climbs[j];break}
+ var near=cl&&st.nr&&cp>=cl.s-300;
+ if(near){
+  var ds=cl.s-cp,sm=route.sm;
+  if(ds>0)info="Côte dans "+Math.round(ds)+" m · +"+Math.round(cl.g)+" m · "+(cl.g/(cl.e-cl.s)*100).toFixed(1)+" %";
+  else{var rd=cl.e-cp,rg=sm[cl.ib]-sm[Math.max(st.nr.i,cl.ia)];info="Côte : reste "+Math.round(rd)+" m · +"+Math.max(0,Math.round(rg))+" m · "+(rd>20?Math.max(0,rg/rd*100).toFixed(1):"–")+" %"}
+ }
+ if(pmode==="auto"){lbl="Auto";if(near){x0=Math.max(0,cp-40);x1=Math.max(cl.e+40,x0+400)}}
+ else if(pmode!=="total"){var W=+pmode;lbl=pmode==="500"?"500 m":"2 km";x0=st.nr?cp-W*.15:0;x1=x0+W}
+ if(x1>T){x0-=x1-T;x1=T}
+ if(x0<0){x1-=x0;x0=0}
+ x1=Math.min(x1,T);
+ return[x0,x1,lbl,info];
+}
 function drawProf(){
  var card=$("pcard");
  if(!route||!route.sm){card.hidden=true;return}
@@ -313,19 +345,25 @@ function drawProf(){
  var dpr=window.devicePixelRatio||1,w=pc.clientWidth,h=pc.clientHeight;
  if(pc.width!==Math.round(w*dpr)||pc.height!==Math.round(h*dpr)){pc.width=w*dpr;pc.height=h*dpr}
  px.setTransform(dpr,0,0,dpr,0,0);px.clearRect(0,0,w,h);
- var top=18,bot=8,rg=Math.max(route.max-route.min,20),n=route.sm.length;
- function X(i){return route.cum[i]/route.total*w}
- function Y(v){return h-bot-(v-route.min)/rg*(h-top-bot)}
- px.beginPath();px.moveTo(0,h);
- for(var i=0;i<n;i+=Math.max(1,Math.floor(n/400)))px.lineTo(X(i),Y(route.sm[i]));
- px.lineTo(w,Y(route.sm[n-1]));px.lineTo(w,h);px.closePath();
+ var n=route.sm.length,C=route.cum,cp=st.nr?C[st.nr.i]:0,W=profWin(cp),x0=W[0],x1=W[1],i,mn=1e9,mx=-1e9;
+ for(i=0;i<n;i++)if(C[i]>=x0&&C[i]<=x1){mn=Math.min(mn,route.sm[i]);mx=Math.max(mx,route.sm[i])}
+ if(mn>mx){mn=route.min;mx=route.max}
+ var top=22,bot=8,rg=Math.max(mx-mn,25);
+ function X(c){return(c-x0)/(x1-x0)*w}
+ function Y(v){return h-bot-(v-mn)/rg*(h-top-bot)}
+ px.beginPath();var f=true,lx=0;
+ for(i=0;i<n;i++){if(C[i]<x0-60||C[i]>x1+60)continue;if(f){px.moveTo(X(C[i]),h);f=false}px.lineTo(X(C[i]),Y(route.sm[i]));lx=X(C[i])}
+ px.lineTo(lx,h);px.closePath();
  px.fillStyle=css("--trk");px.globalAlpha=.25;px.fill();px.globalAlpha=1;
  px.strokeStyle=css("--trk");px.lineWidth=2;px.stroke();
- px.fillStyle=css("--mut");px.font="11px system-ui";
- px.fillText(Math.round(route.max)+" m",6,12);px.fillText(Math.round(route.min)+" m",w-44,12);
- if(st.nr){var x=X(st.nr.i);
-  px.beginPath();px.moveTo(x,top-4);px.lineTo(x,h);px.strokeStyle=css("--rec");px.lineWidth=2;px.stroke();
-  px.beginPath();px.arc(x,Y(route.sm[st.nr.i]),5,0,7);px.fillStyle=css("--rec");px.fill()}
+ px.strokeStyle=css("--warn");px.lineWidth=3.5;
+ route.climbs.forEach(function(c){if(c.e<x0||c.s>x1)return;px.beginPath();for(var i=c.ia;i<=c.ib;i++){var X_=X(C[i]),Y_=Y(route.sm[i]);i===c.ia?px.moveTo(X_,Y_):px.lineTo(X_,Y_)}px.stroke()});
+ px.fillStyle=css("--mut");px.font="11px system-ui";px.textAlign="left";
+ px.fillText(W[3]||("max "+Math.round(mx)+" m"),6,13);
+ px.textAlign="right";px.fillText(W[2],w-6,13);
+ if(st.nr){var x=X(cp);
+  if(x>=0&&x<=w){px.beginPath();px.moveTo(x,top-4);px.lineTo(x,h);px.strokeStyle=css("--rec");px.lineWidth=2;px.stroke();
+   px.beginPath();px.arc(x,Y(route.sm[st.nr.i]),5,0,7);px.fillStyle=css("--rec");px.fill()}}
 }
 window.addEventListener("resize",function(){map.invalidateSize();drawProf()});
 
