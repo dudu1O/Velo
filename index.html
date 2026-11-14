@@ -80,7 +80,7 @@ input[type=file]{display:none}
 </div>
 
 <div class="btns"><button class="go" id="go">Démarrer</button><button id="rst">Remise à zéro</button></div>
-<div class="btns"><label class="btn">Importer GPX<input type="file" id="file" accept=".gpx,application/gpx+xml,text/xml,application/xml"></label><button id="exp">Exporter GPX</button></div>
+<div class="btns"><label class="btn">Importer GPX<input type="file" id="file" accept=".gpx,application/gpx+xml,text/xml,application/xml"></label><button id="exp">Exporter GPX</button><button id="clr" hidden>Retirer GPX</button></div>
 <div id="msg"></div>
 </main>
 
@@ -187,7 +187,7 @@ function setRoute(txt){
  route=parseGpx(txt);store("cv_route",txt);
  routeLine.setLatLngs(route.pts.map(function(p){return[p.lat,p.lon]}));
  var pd=Math.round(map.getSize().x/6)+8;map.fitBounds(routeLine.getBounds(),{padding:[pd,pd]});follow=false;
- $("nav").hidden=false;tAlerted={};turnLayer.clearLayers();
+ $("nav").hidden=false;$("clr").hidden=false;tAlerted={};turnLayer.clearLayers();
  route.turns.forEach(function(t){var q=route.pts[t.i];L.circleMarker([q.lat,q.lon],{radius:4,color:"#d9480f",weight:2,fillOpacity:.9}).addTo(turnLayer)});
  msg("Parcours : "+(route.total/1000).toFixed(1)+" km, "+route.turns.length+" virages, "+route.climbs.length+" côtes"+(route.asc?", D+ "+Math.round(route.asc[route.asc.length-1])+" m":", sans altitude dans le GPX"));
  st.nr=null;nearest();update();drawProf();
@@ -197,6 +197,11 @@ $("file").addEventListener("change",function(e){
  var r=new FileReader();
  r.onload=function(){try{setRoute(r.result)}catch(err){msg(err.message)}};
  r.readAsText(f);e.target.value="";
+});
+
+$("clr").addEventListener("click",function(){
+ route=null;routeLine.setLatLngs([]);turnLayer.clearLayers();store("cv_route",null);
+ $("nav").hidden=true;$("clr").hidden=true;st.nr=null;msg("Parcours retiré.");update();drawProf();
 });
 
 // ---------- GPS ----------
@@ -368,9 +373,10 @@ function drawProf(){
 window.addEventListener("resize",function(){map.invalidateSize();drawProf()});
 
 // ---------- Restauration ----------
-try{var r=load("cv_route");if(r)setRoute(r);follow=true;
- var s=JSON.parse(load("cv_st")||"null");
- if(s&&s.trace&&s.trace.length){st.dist=s.dist;st.moving=s.moving;st.max=s.max;st.asc=s.asc;st.trace=s.trace;
+try{var s=JSON.parse(load("cv_st")||"null"),has=s&&s.trace&&s.trace.length,r=load("cv_route");
+ if(r&&has)setRoute(r);else store("cv_route",null);
+ follow=true;
+ if(has){st.dist=s.dist;st.moving=s.moving;st.max=s.max;st.asc=s.asc;st.trace=s.trace;
   recLine.setLatLngs(s.trace.map(function(p){return[p[0],p[1]]}));$("go").textContent="Reprendre";msg("Sortie précédente restaurée.")}
 }catch(e){}
 update();
