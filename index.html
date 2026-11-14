@@ -27,7 +27,7 @@ main{height:100dvh;max-width:520px;margin:0 auto;display:flex;flex-direction:col
 #turn.now{background:var(--warn);border-color:var(--warn)}#turn.now *{color:#fff;fill:#fff}
 #cmp{right:6px;top:6px;width:30px;height:30px;border-radius:50%;display:flex;justify-content:center;font-size:11px;font-weight:700;line-height:15px;transition:transform .5s linear}
 #mc{right:6px;top:44px;display:flex;flex-direction:column;gap:6px;background:none;border:0}
-#mc button{width:38px;height:38px;padding:0;font-size:17px;border-radius:10px}
+#mc button{flex:none;width:38px;height:38px;padding:0;font-size:17px;border-radius:10px}
 #mc #hd{font-size:11px}
 #spdb{left:6px;bottom:20px;padding:2px 12px 4px;text-align:left}
 #spdb strong{font-size:56px;line-height:1;font-variant-numeric:tabular-nums}
@@ -67,7 +67,7 @@ input[type=file]{display:none}
 <div id="map"></div>
 <div class="ov" id="cmp">N</div>
 <div class="ov" id="turn"><svg viewBox="0 0 100 100"><g id="arr"><path d="M50 8 L80 46 H59 V92 H41 V46 H20 Z"/></g></svg><div><strong id="tdist">–</strong><span id="tlbl">Importez un GPX</span></div></div>
-<div class="ov" id="mc"><button class="ov" id="hd">Cap</button><button class="ov" id="zin">+</button><button class="ov" id="zout">−</button><button class="ov" id="ctr">⌖</button></div>
+<div class="ov" id="mc"><button id="hd">Cap</button><button id="zin">+</button><button id="zout">−</button><button id="ctr">⌖</button></div>
 <div class="ov" id="spdb"><strong id="spd">0.0</strong><em>km/h</em></div>
 <div class="ov" id="gps"><b></b><span>GPS en attente</span></div>
 <div class="ov" id="attr">© OpenStreetMap</div>
