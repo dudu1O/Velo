@@ -56,6 +56,7 @@ input[type=file]{display:none}
 #sheet>div{background:var(--bg);width:100%;max-width:520px;margin:0 auto;border-radius:16px 16px 0 0;padding:14px 12px calc(14px + env(safe-area-inset-bottom,0px))}
 #sheet h2{font-size:15px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
 #sheet h2 button{flex:none;padding:4px 12px}
+.me{background:none;border:0}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .g2 .c strong{font-size:26px}
 [hidden]{display:none!important}
@@ -90,7 +91,7 @@ input[type=file]{display:none}
 <div class="btns"><button class="go" id="go">Démarrer</button><button id="menu">Menu</button></div>
 </div>
 <div id="sheet" hidden><div>
-<h2>Menu · v8<button id="shx">✕</button></h2>
+<h2>Menu · v9<button id="shx">✕</button></h2>
 <div class="g2"><div class="c"><small>Vitesse max</small><strong id="max">0.0</strong><em>km/h</em></div><div class="c"><small>Altitude</small><strong id="alt">–</strong><em>m</em></div></div>
 <div class="g2"><label class="btn">Importer GPX<input type="file" id="file" accept=".gpx,application/gpx+xml,text/xml,application/xml"></label><button id="exp">Exporter GPX</button><button id="clr" hidden>Retirer GPX</button><button id="rst">Remise à zéro</button></div>
 </div></div>
@@ -115,11 +116,11 @@ var map=L.map("map",{zoomControl:false,attributionControl:false}).setView([46.6,
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
 var routeLine=L.polyline([],{color:"#2563eb",weight:5,opacity:.85}).addTo(map);
 var recLine=L.polyline([],{color:"#1f8a4c",weight:4}).addTo(map);
-var me=L.circleMarker([0,0],{radius:8,color:"#fff",weight:3,fillColor:"#1f8a4c",fillOpacity:1});
+var me=L.marker([0,0],{interactive:false,keyboard:false,zIndexOffset:1000,icon:L.divIcon({className:"me",iconSize:[44,44],iconAnchor:[22,22],html:'<svg viewBox="-30 -30 60 60" width="44" height="44"><g id="mearr"><path d="M0 -24 L17 20 L0 10 L-17 20 Z" fill="#1f8a4c" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></g></svg>'})});
 var turnLayer=L.layerGroup().addTo(map);
 map.on("dragstart",function(){follow=false});
 var head=load("cv_head")!=="0",hdg=0,rotc=0;
-function rot(){var t=head?"rotate("+(-rotc)+"deg)":"none";$("map").style.transform=t;$("cmp").style.transform=t}
+function rot(){var t=head?"rotate("+(-rotc)+"deg)":"none";$("map").style.transform=t;$("cmp").style.transform=t;var a=$("mearr");if(a)a.setAttribute("transform","rotate("+rotc+")")}
 function applyMode(){
  ["dragging","touchZoom","doubleClickZoom"].forEach(function(h){map[h][head?"disable":"enable"]()});
  $("hd").textContent=head?"Cap":"Nord";rot();if(head)follow=true;
